@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="uz">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ABDUAZIZ IT ACADEMY</title>
+  </head>
+  <body>
+    <script>
+      const base = '/abduaziz-it-academy/'
+      const prefix = '/abduaziz-it-academy'
+      const path = location.pathname.startsWith(prefix) ? location.pathname.slice(prefix.length) || '/' : '/'
+      const params = new URLSearchParams(location.search)
+      params.set('route', path)
+      location.replace(`${base}?${params.toString()}${location.hash}`)
+    </script>
+  </body>
+</html>

@@ -19,36 +19,38 @@ const money = (amount: number) => new Intl.NumberFormat('uz-UZ').format(amount) 
 const roleNames: Record<Role, string> = { STUDENT: 'O‘quvchi', ADMIN: 'Administrator', DIRECTOR: 'Direktor' }
 const avatar = (name: string) => `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=1e293b&color=e2e8f0&bold=true`
 const appPath = () => {
+  const fallbackPath = new URLSearchParams(window.location.search).get('route')
+  if (fallbackPath?.startsWith('/')) return fallbackPath
   const base = import.meta.env.BASE_URL
   const path = window.location.pathname
   if (base === '/') return path
   return path.startsWith(base) ? `/${path.slice(base.length)}` || '/' : path
 }
 const appUrl = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\/+/, '')}`
-const requiredRole = (path: string): Role | null => path === '/director' ? 'DIRECTOR' : path === '/admin' ? 'ADMIN' : path === '/student' ? 'STUDENT' : null
+const dashboardRole = (path: string): Role | null => path === '/user' ? 'STUDENT' : path === '/admin/dashboard' ? 'ADMIN' : path === '/director/dashboard' ? 'DIRECTOR' : null
+const dashboardPath = (role: Role) => role === 'STUDENT' ? '/user' : role === 'ADMIN' ? '/admin/dashboard' : '/director/dashboard'
 
 function App() {
   const [data, setData] = useState<AcademyData>(() => loadData())
+  const [currentPath, setCurrentPath] = useState(() => appPath())
   const [user, setUser] = useState<User | null>(() => {
     try { return JSON.parse(sessionStorage.getItem('academy-session') || 'null') as User | null } catch { return null }
   })
-  const [panel, setPanel] = useState(() => Boolean(user))
-  const [loginOpen, setLoginOpen] = useState(false)
   const [registerOpen, setRegisterOpen] = useState(false)
   const [courseDetail, setCourseDetail] = useState<Course | null>(null)
   const [toast, setToast] = useState('')
   const [light, setLight] = useState(false)
 
+  const navigateTo = (path: string) => {
+    window.history.replaceState(null, '', appUrl(path))
+    setCurrentPath(path)
+  }
+
   useEffect(() => saveData(data), [data])
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === 'l') {
-        event.preventDefault()
-        setLoginOpen(true)
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    const onPopState = () => setCurrentPath(appPath())
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
   }, [])
   useEffect(() => {
     if (!toast) return
@@ -56,41 +58,30 @@ function App() {
     return () => window.clearTimeout(timer)
   }, [toast])
   useEffect(() => {
-    const role = requiredRole(appPath())
-    if (!role) return
-    const allowed = user?.role === role || (role === 'ADMIN' && user?.role === 'DIRECTOR')
-    if (!allowed) {
-      if (user) {
-        setUser(null)
-        setPanel(false)
-        sessionStorage.removeItem('academy-session')
-      }
-      setToast('Access Denied. Himoyalangan panelga kirish uchun login qiling.')
-      setLoginOpen(true)
-    }
-  }, [])
+    const role = dashboardRole(currentPath)
+    if (!role || user?.role === role) return
+    if (user) setUser(null)
+    sessionStorage.removeItem('academy-session')
+    setToast('Access Denied. Kerakli rol uchun alohida login qiling.')
+  }, [currentPath, user])
 
   const updateData = (next: AcademyData) => setData(next)
-  const signIn = async (email: string, code: string) => {
+  const signIn = async (email: string, code: string, expectedRole: Role) => {
     const found = await authenticate(data, email, code)
-    const role = requiredRole(appPath())
-    if (!found || (role && found.role !== role && !(role === 'ADMIN' && found.role === 'DIRECTOR'))) {
-      setToast(role && found ? 'Access Denied. Bu panel uchun rolingiz yetarli emas.' : 'Email yoki kirish kodi noto‘g‘ri.')
+    if (!found || found.role !== expectedRole) {
+      setToast(found ? 'Access Denied. Bu login faqat tegishli rol uchun.' : 'Email yoki kirish kodi noto‘g‘ri.')
       return false
     }
     setUser(found)
     sessionStorage.setItem('academy-session', JSON.stringify(found))
-    setPanel(true)
-    window.history.replaceState(null, '', appUrl(found.role === 'DIRECTOR' ? '/director' : found.role === 'ADMIN' ? '/admin' : '/student'))
-    setLoginOpen(false)
+    navigateTo(dashboardPath(found.role))
     setToast(`Xush kelibsiz, ${found.name.split(' ')[0]}!`)
     return true
   }
   const signOut = () => {
     setUser(null)
-    setPanel(false)
-    window.history.replaceState(null, '', appUrl('/'))
     sessionStorage.removeItem('academy-session')
+    navigateTo('/')
     setToast('Tizimdan muvaffaqiyatli chiqdingiz.')
   }
   const apply = (input: { name: string; phone: string; course: string; email?: string; message?: string }) => {
@@ -117,22 +108,26 @@ function App() {
     setUser(created)
     sessionStorage.setItem('academy-session', JSON.stringify(created))
     setRegisterOpen(false)
-    setPanel(true)
-    window.history.replaceState(null, '', appUrl('/student'))
+    navigateTo('/user')
     setToast('Akkauntingiz yaratildi. Akademiyaga xush kelibsiz!')
   }
 
-  const path = appPath()
+  const path = currentPath
   const errorCode = ['/403', '/404', '/500'].includes(path) ? path.slice(1) : ''
-  const knownPaths = ['/', '/student', '/admin', '/director', '/403', '/404', '/500']
+  const knownPaths = ['/', '/user', '/admin/login', '/admin/dashboard', '/director/login', '/director/dashboard', '/403', '/404', '/500']
   if (errorCode || !knownPaths.includes(path)) return <ErrorPage code={errorCode || '404'} />
+
+  const routeRole = dashboardRole(path)
+  const showingDashboard = Boolean(routeRole && user?.role === routeRole)
+  const loginRole: Role | null = path === '/admin/login' ? 'ADMIN' : path === '/director/login' ? 'DIRECTOR' : path === '/user' && user?.role !== 'STUDENT' ? 'STUDENT' : routeRole && user?.role !== routeRole ? routeRole : null
 
   return (
     <div className={light ? 'app theme-light' : 'app'}>
-      {panel && user ? <Dashboard data={data} setData={updateData} user={user} setUser={setUser} onLogout={signOut} notify={setToast} onTheme={() => setLight(!light)} light={light} /> : (
+      {showingDashboard && user ? <Dashboard data={data} setData={updateData} user={user} setUser={setUser} onLogout={signOut} notify={setToast} onTheme={() => setLight(!light)} light={light} /> : loginRole ? (
+        <RoleLoginPage role={loginRole} onLogin={signIn} onClose={() => navigateTo('/')} onRegister={() => setRegisterOpen(true)} />
+      ) : (
         <Landing data={data} onApply={apply} onRegister={() => setRegisterOpen(true)} onCourse={setCourseDetail} onTheme={() => setLight(!light)} light={light} />
       )}
-      {loginOpen && <LoginModal onClose={() => setLoginOpen(false)} onLogin={signIn} />}
       {registerOpen && <RegisterModal courses={data.courses} onClose={() => setRegisterOpen(false)} onRegister={completeRegistration} />}
       {courseDetail && <CourseModal course={courseDetail} onClose={() => setCourseDetail(null)} onEnroll={enroll} />}
       {toast && <div className="toast"><CheckCircle2 size={18} />{toast}<button aria-label="Yopish" onClick={() => setToast('')}><X size={16} /></button></div>}
@@ -252,13 +247,22 @@ function CourseModal({ course, onClose, onEnroll }: { course: Course; onClose: (
   return <Modal onClose={onClose}><div className="course-modal-image"><img src={`https://images.unsplash.com/${course.image}?auto=format&fit=crop&w=1200&q=85`} alt={course.name} /><span className={`course-category ${course.tone}`}>{course.category}</span></div><div className="course-modal-content"><div className="section-kicker">KURS DASTURI</div><h2>{course.name}</h2><p>{course.description} Kurs davomida mentorlar bilan real loyihalar ustida ishlaysiz va ishga tayyor portfolio yaratasiz.</p><div className="course-modal-stats"><span><Clock3 />{course.duration}</span><span><Layers3 />{course.level}</span><span><Users />{course.students} o‘quvchi</span><span><Star fill="currentColor" />{course.rating} reyting</span></div><div className="curriculum"><strong>O‘quv dasturida</strong><span><Check />Fundamentals va professional workflow</span><span><Check />Amaliy portfolio loyihalari</span><span><Check />Code review va mentor fikri</span><span><Check />Karyera uchun tayyorgarlik</span></div><div className="course-modal-more"><div><strong>Nimalarni o‘rganasiz</strong><p>Amaliy texnologiyalar, jamoaviy workflow va portfolio uchun yakuniy loyiha.</p></div><div><strong>Talablar</strong><p>Boshlang‘ich daraja uchun oldindan tajriba talab qilinmaydi. Noutbuk tavsiya etiladi.</p></div><div><strong>Karyera imkoniyatlari</strong><p>Junior mutaxassis, freelancer yoki o‘z mahsulotingiz ustida ishlash.</p></div><div className="course-mentor"><img src={avatar(course.teacher)} alt="" /><span><small>MENTOR</small><strong>{course.teacher}</strong></span><span className="course-rating"><Star size={12} fill="currentColor" /> {course.rating}</span></div></div><div className="modal-bottom"><div><small>OYLIK TO‘LOV</small><strong>{money(course.price)}</strong></div><button className="button button-primary" onClick={() => onEnroll(course.name)}>Kursga yozilish <ArrowRight size={16} /></button></div></div></Modal>
 }
 
-function LoginModal({ onClose, onLogin }: { onClose: () => void; onLogin: (email: string, code: string) => Promise<boolean> }) {
+function RoleLoginPage({ role, onClose, onLogin, onRegister }: { role: Role; onClose: () => void; onLogin: (email: string, code: string, role: Role) => Promise<boolean>; onRegister: () => void }) {
   const [email, setEmail] = useState('')
   const [code, setCode] = useState('')
   const [showCode, setShowCode] = useState(false)
   const [error, setError] = useState('')
-  const submit = async (event: FormEvent) => { event.preventDefault(); setError(''); try { if (!await onLogin(email, code)) setError('Kiritilgan ma’lumotlarni tekshirib qayta urinib ko‘ring.') } catch { setError('Kirishni tekshirib bo‘lmadi. Qayta urinib ko‘ring.') } }
-  return <Modal onClose={onClose} narrow><div className="login-brand"><span className="brand-mark"><Code2 size={19} /></span><span>ABDUAZIZ <small>ACADEMY PORTAL</small></span></div><div className="login-heading"><div className="section-kicker">XAVFSIZ KIRISH</div><h2>Akkauntingizga<br />kiring.</h2><p>Email va kirish kodingizni kiriting.</p></div><form className="login-form" onSubmit={submit}><label>Email manzilingiz<div className="input-icon"><Mail size={16} /><input type="email" autoComplete="username" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="name@academy.uz" /></div></label><label>Kirish kodi<div className="input-icon"><LockKeyhole size={16} /><input type={showCode ? 'text' : 'password'} autoComplete="current-password" required value={code} onChange={(event) => setCode(event.target.value)} placeholder="Kirish kodini kiriting" /><button type="button" className="reveal-code" aria-label={showCode ? 'Kodni yashirish' : 'Kodni ko‘rsatish'} onClick={() => setShowCode(!showCode)}>{showCode ? <EyeOff size={16} /> : <Eye size={16} />}</button></div></label>{error && <p className="form-error">{error}</p>}<button className="button button-primary login-submit" type="submit">Xavfsiz kirish <ArrowRight size={16} /></button><div className="login-security"><Shield size={14} /> Himoyalangan akademiya portali</div></form></Modal>
+  const [submitting, setSubmitting] = useState(false)
+  const title = role === 'STUDENT' ? 'O‘quvchi portali' : role === 'ADMIN' ? 'Admin paneli' : 'Direktor paneli'
+  const submit = async (event: FormEvent) => {
+    event.preventDefault()
+    setError('')
+    setSubmitting(true)
+    try { if (!await onLogin(email, code, role)) setError('Email yoki kod noto‘g‘ri, yoki bu akkauntda kerakli rol yo‘q.') }
+    catch { setError('Kirishni tekshirib bo‘lmadi. Qayta urinib ko‘ring.') }
+    finally { setSubmitting(false) }
+  }
+  return <main className="role-login-page"><div className="login-grid" /><a href={appUrl('/')} className="role-login-brand"><span className="brand-mark"><Code2 size={19} /></span><span>ABDUAZIZ <small>IT ACADEMY</small></span></a><section className="role-login-card"><div className={`role-login-icon role-${role.toLowerCase()}`}>{role === 'STUDENT' ? <GraduationCap /> : role === 'ADMIN' ? <Shield /> : <LockKeyhole />}</div><div className="section-kicker">XAVFSIZ KIRISH · {role}</div><h1>{title}</h1><p className="role-login-description">{role === 'STUDENT' ? 'Kurslaringiz, dars jadvali va o‘quv natijalaringizga kiring.' : `${roleNames[role]} hisobiga tegishli alohida kirish.`}</p><form className="login-form" onSubmit={submit}><label>Email manzilingiz<div className="input-icon"><Mail size={16} /><input type="email" autoComplete="username" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="name@academy.uz" /></div></label><label>Kirish kodi<div className="input-icon"><LockKeyhole size={16} /><input type={showCode ? 'text' : 'password'} autoComplete="current-password" required value={code} onChange={(event) => setCode(event.target.value)} placeholder="Kirish kodini kiriting" /><button type="button" className="reveal-code" aria-label={showCode ? 'Kodni yashirish' : 'Kodni ko‘rsatish'} onClick={() => setShowCode(!showCode)}>{showCode ? <EyeOff size={16} /> : <Eye size={16} />}</button></div></label>{error && <p className="form-error">{error}</p>}<button className="button button-primary login-submit" type="submit" disabled={submitting}>{submitting ? 'Tekshirilmoqda...' : 'Xavfsiz kirish'} <ArrowRight size={16} /></button></form><div className="login-security"><Shield size={14} /> Bu kirish faqat {roleNames[role].toLowerCase()} roli uchun</div>{role === 'STUDENT' && <button className="role-register-link" onClick={onRegister}>Yangi o‘quvchi akkaunti yaratish <ArrowRight size={14} /></button>}</section><button className="role-login-back" onClick={onClose}><ChevronLeft size={15} /> Bosh sahifaga qaytish</button></main>
 }
 
 function RegisterModal({ courses, onClose, onRegister }: { courses: Course[]; onClose: () => void; onRegister: (input: { name: string; email: string; phone: string; dateOfBirth: string; course: string; password: string }) => Promise<void> }) {

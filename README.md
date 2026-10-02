@@ -15,11 +15,14 @@ npm run dev
 
 Every push to `main` builds and deploys the site to GitHub Pages through the workflow in `.github/workflows/pages.yml`.
 
-## Demo access
+## Separate portals
 
-- Admin login is intentionally hidden from public navigation. Press `Ctrl+Shift+L` and enter the initial admin email and access code supplied to the academy owner.
-- Director login uses the same hidden entry point and the separate director credentials supplied to the owner.
-- Student demo: `student@academy.uz` with access code `student123`, or create a student account from the public registration flow.
+- Student portal: `/user`
+- Admin login: `/admin/login`; after successful login the dashboard is `/admin/dashboard`.
+- Director login: `/director/login`; after successful login the dashboard is `/director/dashboard`.
+- Student demo: `student@academy.uz` with access code `student123`, or create an account from the public registration flow.
+
+Each login accepts only its assigned role. GitHub Pages deep links are restored through `public/404.html`.
 
 Credential changes are available under Security in the respective management panel. Codes are masked in the interface.
 
