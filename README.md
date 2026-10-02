@@ -2,12 +2,18 @@
 
 Premium academy website and role-based management platform built with React, TypeScript, and Vite.
 
+## Live site
+
+https://abduaziz475.github.io/abduaziz-it-academy/
+
 ## Development
 
 ```sh
 npm install
 npm run dev
 ```
+
+Every push to `main` builds and deploys the site to GitHub Pages through the workflow in `.github/workflows/pages.yml`.
 
 ## Demo access
 

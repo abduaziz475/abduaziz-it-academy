@@ -18,6 +18,13 @@ import {
 const money = (amount: number) => new Intl.NumberFormat('uz-UZ').format(amount) + ' so‘m'
 const roleNames: Record<Role, string> = { STUDENT: 'O‘quvchi', ADMIN: 'Administrator', DIRECTOR: 'Direktor' }
 const avatar = (name: string) => `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=1e293b&color=e2e8f0&bold=true`
+const appPath = () => {
+  const base = import.meta.env.BASE_URL
+  const path = window.location.pathname
+  if (base === '/') return path
+  return path.startsWith(base) ? `/${path.slice(base.length)}` || '/' : path
+}
+const appUrl = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\/+/, '')}`
 const requiredRole = (path: string): Role | null => path === '/director' ? 'DIRECTOR' : path === '/admin' ? 'ADMIN' : path === '/student' ? 'STUDENT' : null
 
 function App() {
@@ -49,7 +56,7 @@ function App() {
     return () => window.clearTimeout(timer)
   }, [toast])
   useEffect(() => {
-    const role = requiredRole(window.location.pathname)
+    const role = requiredRole(appPath())
     if (!role) return
     const allowed = user?.role === role || (role === 'ADMIN' && user?.role === 'DIRECTOR')
     if (!allowed) {
@@ -66,7 +73,7 @@ function App() {
   const updateData = (next: AcademyData) => setData(next)
   const signIn = async (email: string, code: string) => {
     const found = await authenticate(data, email, code)
-    const role = requiredRole(window.location.pathname)
+    const role = requiredRole(appPath())
     if (!found || (role && found.role !== role && !(role === 'ADMIN' && found.role === 'DIRECTOR'))) {
       setToast(role && found ? 'Access Denied. Bu panel uchun rolingiz yetarli emas.' : 'Email yoki kirish kodi noto‘g‘ri.')
       return false
@@ -74,7 +81,7 @@ function App() {
     setUser(found)
     sessionStorage.setItem('academy-session', JSON.stringify(found))
     setPanel(true)
-    window.history.replaceState(null, '', found.role === 'DIRECTOR' ? '/director' : found.role === 'ADMIN' ? '/admin' : '/student')
+    window.history.replaceState(null, '', appUrl(found.role === 'DIRECTOR' ? '/director' : found.role === 'ADMIN' ? '/admin' : '/student'))
     setLoginOpen(false)
     setToast(`Xush kelibsiz, ${found.name.split(' ')[0]}!`)
     return true
@@ -82,7 +89,7 @@ function App() {
   const signOut = () => {
     setUser(null)
     setPanel(false)
-    window.history.replaceState(null, '', '/')
+    window.history.replaceState(null, '', appUrl('/'))
     sessionStorage.removeItem('academy-session')
     setToast('Tizimdan muvaffaqiyatli chiqdingiz.')
   }
@@ -111,11 +118,11 @@ function App() {
     sessionStorage.setItem('academy-session', JSON.stringify(created))
     setRegisterOpen(false)
     setPanel(true)
-    window.history.replaceState(null, '', '/student')
+    window.history.replaceState(null, '', appUrl('/student'))
     setToast('Akkauntingiz yaratildi. Akademiyaga xush kelibsiz!')
   }
 
-  const path = window.location.pathname
+  const path = appPath()
   const errorCode = ['/403', '/404', '/500'].includes(path) ? path.slice(1) : ''
   const knownPaths = ['/', '/student', '/admin', '/director', '/403', '/404', '/500']
   if (errorCode || !knownPaths.includes(path)) return <ErrorPage code={errorCode || '404'} />
@@ -559,7 +566,7 @@ function EmptyState({ title, description }: { title: string; description: string
 
 function ErrorPage({ code }: { code: string }) {
   const message = code === '403' ? 'Bu sahifaga kirish huquqingiz mavjud emas.' : code === '500' ? 'Serverda xatolik yuz berdi.' : 'Bu sahifa topilmadi.'
-  return <div className="error-page"><div className="error-mark"><Code2 size={20} /></div><span className="section-kicker">ABDUAZIZ IT ACADEMY · {code}</span><h1>{code}</h1><h2>{message}</h2><a href="/" className="button button-primary">Bosh sahifaga qaytish <ArrowRight size={16} /></a></div>
+  return <div className="error-page"><div className="error-mark"><Code2 size={20} /></div><span className="section-kicker">ABDUAZIZ IT ACADEMY · {code}</span><h1>{code}</h1><h2>{message}</h2><a href={appUrl('/')} className="button button-primary">Bosh sahifaga qaytish <ArrowRight size={16} /></a></div>
 }
 
 export default App
